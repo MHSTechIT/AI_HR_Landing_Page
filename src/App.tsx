@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import heroImg from './assets/CEO Sir.png'
+import mhsLogo from './assets/MHS_Logo.png'
 import './App.css'
 
 type Role = 'Sales' | 'IT' | 'Marketing' | 'HR' | 'Others'
@@ -16,6 +18,7 @@ type CandidateLead = {
   role: Role
   resumeName: string
   resumeSize: number
+  resumeUrl?: string
   answers: Record<string, string>
   syncStatus: 'local' | 'synced'
 }
@@ -180,6 +183,15 @@ function csvEscape(value: string | number) {
   return `"${String(value).replaceAll('"', '""')}"`
 }
 
+async function fileToDataUrl(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Unable to read file'))
+    reader.readAsDataURL(file)
+  })
+}
+
 function downloadLeadsCsv(leads: CandidateLead[], questions: Question[]) {
   const answerHeaders = questions
     .filter((question) => question.status === 'published')
@@ -191,6 +203,7 @@ function downloadLeadsCsv(leads: CandidateLead[], questions: Question[]) {
     'Email',
     'Role',
     'Resume',
+    'Resume URL',
     'Sync Status',
     ...answerHeaders.map((question) => `${question.role}: ${question.label}`),
   ]
@@ -201,6 +214,7 @@ function downloadLeadsCsv(leads: CandidateLead[], questions: Question[]) {
     lead.email,
     lead.role,
     lead.resumeName,
+    lead.resumeUrl || '',
     lead.syncStatus,
     ...answerHeaders.map((question) => lead.answers[question.id] || ''),
   ])
@@ -231,7 +245,18 @@ async function syncLeadToSupabase(lead: CandidateLead) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<'apply' | 'admin'>('apply')
+  const [activeView, setActiveView] = useState<'apply' | 'admin' | 'admin-login'>(
+    'apply',
+  )
+  const [adminPage, setAdminPage] = useState<'dashboard' | 'leads' | 'questions'>(
+    'dashboard',
+  )
+  const [adminId, setAdminId] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminAuthError, setAdminAuthError] = useState('')
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() =>
+    localStorage.getItem('mhs-admin-auth') === 'yes',
+  )
   const [questions, setQuestions] = useState<Question[]>(() =>
     loadState(storageKeys.questions, defaultQuestions),
   )
@@ -247,6 +272,9 @@ function App() {
   const [step, setStep] = useState(0)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [leadSearch, setLeadSearch] = useState('')
+  const [leadRoleFilter, setLeadRoleFilter] = useState<'All Roles' | Role>('All Roles')
+  const [showAddQuestion, setShowAddQuestion] = useState(false)
   const [newQuestion, setNewQuestion] = useState<Question>({
     id: '',
     role: 'Sales',
@@ -279,6 +307,38 @@ function App() {
   useEffect(() => {
     saveState(storageKeys.draft, { basic, role, answers })
   }, [basic, role, answers])
+  useEffect(() => {
+    if (activeView === 'admin' && !isAdminAuthenticated) {
+      setActiveView('admin-login')
+    }
+  }, [activeView, isAdminAuthenticated])
+
+  const publishedQuestions = questions.filter(
+    (question) => question.status === 'published' && question.enabled,
+  )
+  const thisWeekLeads = leads.filter((lead) => {
+    const submitted = new Date(lead.createdAt).getTime()
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+    return submitted >= weekAgo
+  })
+  const roleLeadCounts = roles.reduce<Record<Role, number>>(
+    (acc, roleName) => ({
+      ...acc,
+      [roleName]: leads.filter((lead) => lead.role === roleName).length,
+    }),
+    { Sales: 0, IT: 0, Marketing: 0, HR: 0, Others: 0 },
+  )
+  const filteredLeads = leads.filter((lead) => {
+    const searchable = `${lead.name} ${lead.email} ${lead.phone}`.toLowerCase()
+    const roleMatch = leadRoleFilter === 'All Roles' || lead.role === leadRoleFilter
+    return roleMatch && searchable.includes(leadSearch.toLowerCase().trim())
+  })
+  const questionGroups = roles.map((roleName) => ({
+    role: roleName,
+    list: questions
+      .filter((question) => question.role === roleName)
+      .sort((a, b) => a.order - b.order),
+  }))
 
   function validateCurrentStep() {
     if (step === 0) {
@@ -318,7 +378,56 @@ function App() {
     setStep((current) => Math.max(current - 1, 0))
   }
 
+  function startApplication(preselectedRole?: Role) {
+    setActiveView('apply')
+    setSuccess('')
+    setError('')
+    setStep(0)
+    if (preselectedRole) setRole(preselectedRole)
+    window.setTimeout(() => {
+      document.getElementById('apply-form')?.scrollIntoView({ behavior: 'smooth' })
+    }, 40)
+  }
+
+  function requestAdminAccess() {
+    if (isAdminAuthenticated) {
+      setActiveView('admin')
+      return
+    }
+    setAdminAuthError('')
+    setActiveView('admin-login')
+  }
+
+  function verifyAdminLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const validAdminId =
+      (import.meta.env.VITE_ADMIN_LOGIN_ID as string | undefined) || 'admin'
+    const validAdminPassword =
+      (import.meta.env.VITE_ADMIN_LOGIN_PASSWORD as string | undefined) || 'admin123'
+    if (
+      adminId.trim().toLowerCase() === validAdminId.toLowerCase() &&
+      adminPassword === validAdminPassword
+    ) {
+      localStorage.setItem('mhs-admin-auth', 'yes')
+      setIsAdminAuthenticated(true)
+      setAdminPassword('')
+      setAdminAuthError('')
+      setActiveView('admin')
+      return
+    }
+    setAdminAuthError('Invalid login ID or password.')
+  }
+
+  function logoutAdmin() {
+    localStorage.removeItem('mhs-admin-auth')
+    setIsAdminAuthenticated(false)
+    setAdminId('')
+    setAdminPassword('')
+    setActiveView('apply')
+  }
+
   async function submitApplication() {
+    const resumeUrl = resume ? await fileToDataUrl(resume) : ''
     const lead: CandidateLead = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
@@ -328,6 +437,7 @@ function App() {
       role: role || 'Others',
       resumeName: resume?.name || '',
       resumeSize: resume?.size || 0,
+      resumeUrl,
       answers,
       syncStatus: 'local',
     }
@@ -336,8 +446,8 @@ function App() {
     setLeads((current) => [savedLead, ...current])
     setSuccess(
       synced
-        ? 'Application submitted and synced.'
-        : 'Application submitted locally. Add Supabase URL to sync online.',
+        ? 'Thanks! Your application is now under review.'
+        : 'Thanks! Your application is now under review.',
     )
     setBasic(emptyBasic)
     setResume(null)
@@ -384,6 +494,22 @@ function App() {
         question.id === id ? { ...question, ...patch } : question,
       ),
     )
+  }
+
+  function formatSubmissionDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  }
+
+  async function openResume(lead: CandidateLead) {
+    if (!lead.resumeUrl) return
+    const res = await fetch(lead.resumeUrl)
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    window.open(blobUrl, '_blank')
   }
 
   function renderQuestionInput(question: Question) {
@@ -434,52 +560,59 @@ function App() {
             Your profile is now available in the leads table, and HR can export
             it to Excel anytime.
           </p>
-          <button className="primary-btn" onClick={() => setSuccess('')}>
-            Submit another application
-          </button>
         </div>
       )
     }
     if (step === 0) {
       return (
-        <div className="step-panel">
-          <span className="eyebrow">Step 1</span>
-          <h2>Tell us who you are</h2>
+        <div className="step-panel basics-card">
+          <div className="basics-icon">U</div>
+          <h2>Let's start with your basics</h2>
+          <p className="basics-subtitle">Tell us who you are this takes 30 seconds.</p>
           <div className="field-grid">
             <label>
-              Name
-              <input
-                value={basic.name}
-                onChange={(event) =>
-                  setBasic((current) => ({ ...current, name: event.target.value }))
-                }
-                placeholder="Your full name"
-              />
+              Full Name
+              <div className="input-wrap">
+                <span className="field-icon">N</span>
+                <input
+                  value={basic.name}
+                  onChange={(event) =>
+                    setBasic((current) => ({ ...current, name: event.target.value }))
+                  }
+                  placeholder="e.g. Priya Sharma"
+                />
+              </div>
             </label>
             <label>
               Phone Number
-              <input
-                inputMode="numeric"
-                maxLength={10}
-                value={basic.phone}
-                onChange={(event) =>
-                  setBasic((current) => ({
-                    ...current,
-                    phone: event.target.value.replace(/\D/g, ''),
-                  }))
-                }
-                placeholder="10 digit number"
-              />
+              <div className="input-wrap">
+                <span className="field-icon">P</span>
+                <input
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={basic.phone}
+                  onChange={(event) =>
+                    setBasic((current) => ({
+                      ...current,
+                      phone: event.target.value.replace(/\D/g, ''),
+                    }))
+                  }
+                  placeholder="10-digit mobile number"
+                />
+              </div>
             </label>
             <label>
-              Email ID
-              <input
-                value={basic.email}
-                onChange={(event) =>
-                  setBasic((current) => ({ ...current, email: event.target.value }))
-                }
-                placeholder="name@example.com"
-              />
+              Email Address
+              <div className="input-wrap">
+                <span className="field-icon">E</span>
+                <input
+                  value={basic.email}
+                  onChange={(event) =>
+                    setBasic((current) => ({ ...current, email: event.target.value }))
+                  }
+                  placeholder="yourname@example.com"
+                />
+              </div>
             </label>
           </div>
         </div>
@@ -514,7 +647,8 @@ function App() {
                 key={item}
                 onClick={() => {
                   setRole(item)
-                  window.setTimeout(goNext, 180)
+                  setError('')
+                  setStep((current) => Math.min(current + 1, totalSteps - 1))
                 }}
                 type="button"
               >
@@ -564,53 +698,85 @@ function App() {
 
   return (
     <main>
-      <nav className="topbar">
-        <a className="brand" href="#home">
-          MHS Careers
-        </a>
-        <div className="nav-actions">
-          <button
-            className={activeView === 'apply' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActiveView('apply')}
-          >
-            Candidate
-          </button>
-          <button
-            className={activeView === 'admin' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActiveView('admin')}
-          >
-            Admin
-          </button>
-        </div>
-      </nav>
+      {activeView === 'apply' && (
+        <nav className="topbar">
+          <a className="brand" href="#home">
+            <img src={mhsLogo} alt="MHS Logo" className="nav-logo" />
+            MHS Careers
+          </a>
+          <div className="nav-actions">
+            <button
+              className={activeView === 'apply' ? 'nav-btn active' : 'nav-btn'}
+              onClick={() => setActiveView('apply')}
+            >
+              Candidate
+            </button>
+            <button
+              className="nav-btn"
+              onClick={requestAdminAccess}
+            >
+              Admin
+            </button>
+          </div>
+        </nav>
+      )}
 
       {activeView === 'apply' ? (
         <>
           <section className="hero-section" id="home">
             <div className="hero-copy">
+              <div className="hero-logo-wrap">
+                <img src={mhsLogo} alt="MHS Logo" className="hero-logo" />
+              </div>
               <span className="eyebrow">Smart career application funnel</span>
               <h1>Join our team. Apply in a flow built around your role.</h1>
               <p>
                 A quick, guided application experience with role-specific
                 questions, autosaved answers, and an HR-ready lead record.
               </p>
-              <a className="primary-btn" href="#apply">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => startApplication()}
+              >
                 Apply Now
-              </a>
+              </button>
             </div>
             <div className="hero-visual" aria-hidden="true">
-              <div className="orbit one"></div>
-              <div className="orbit two"></div>
-              <div className="candidate-card">
-                <span>Lead quality</span>
-                <strong>94%</strong>
-              </div>
-              <div className="floating-note">Auto-save enabled</div>
-              <div className="floating-note second">Excel export ready</div>
+              <img src={heroImg} alt="Career mentor" className="hero-right-image" />
             </div>
           </section>
 
-          <section className="application-shell" id="apply">
+          <section className="department-section">
+            <div className="department-head">
+              <h2>Hiring Across Departments</h2>
+              <p>We have opportunities for every kind of talent.</p>
+            </div>
+            <div className="department-grid">
+              {[
+                ['Sales', 'Sales', 'dept sales'],
+                ['IT & Engineering', 'IT', 'dept it'],
+                ['Marketing', 'Marketing', 'dept marketing'],
+                ['Human Resources', 'HR', 'dept hr'],
+                ['Others', 'Others', 'dept others'],
+              ].map(([title, roleName, className]) => (
+                <article className={className} key={title}>
+                  <div className="dept-overlay">
+                    <h3>{title}</h3>
+                    <button
+                      type="button"
+                      className="dept-apply"
+                      onClick={() => startApplication(roleName as Role)}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="application-shell" id="apply-form">
             <div className="form-meta">
               <span>Step {Math.min(step + 1, totalSteps)} / {totalSteps}</span>
               <strong>{progress}% complete</strong>
@@ -634,186 +800,392 @@ function App() {
             )}
           </section>
 
-          <section className="insights">
-            {[
-              ['Dynamic role flow', 'Questions change after job selection.'],
-              ['Admin managed', 'HR can publish, draft, disable, and order questions.'],
-              ['Lead operations', 'Local records, Supabase sync, and Excel export.'],
-            ].map(([title, body]) => (
-              <article key={title}>
-                <span></span>
-                <h3>{title}</h3>
-                <p>{body}</p>
-              </article>
-            ))}
+          <section className="journey-cta">
+            <div className="journey-inner">
+              <h2>Ready to start your journey?</h2>
+              <p>It takes less than 5 minutes to apply. Our team reviews every application personally.</p>
+              <button
+                type="button"
+                className="journey-btn"
+                onClick={() => startApplication()}
+              >
+                Apply Now - It&apos;s Free
+              </button>
+            </div>
           </section>
         </>
-      ) : (
-        <section className="admin-shell">
-          <div className="admin-header">
-            <div>
-              <span className="eyebrow">HR control center</span>
-              <h1>Manage questions and candidate leads</h1>
+      ) : activeView === 'admin-login' ? (
+        <section className="admin-login-shell">
+          <form className="admin-login-card" onSubmit={verifyAdminLogin}>
+            <h1>Admin Login</h1>
+            <p>Please enter valid credentials to access the admin panel.</p>
+            <label>
+              Login ID
+              <input
+                value={adminId}
+                onChange={(event) => setAdminId(event.target.value)}
+                placeholder="Enter admin login ID"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+                placeholder="Enter password"
+              />
+            </label>
+            {adminAuthError && <p className="error">{adminAuthError}</p>}
+            <div className="login-actions">
+              <button type="button" onClick={() => setActiveView('apply')}>
+                Back to Candidate
+              </button>
+              <button className="primary-btn" type="submit">
+                Login
+              </button>
             </div>
-            <button onClick={() => downloadLeadsCsv(leads, questions)}>
-              Export Excel CSV
-            </button>
-          </div>
-
-          <div className="admin-grid">
-            <form className="admin-panel" onSubmit={addQuestion}>
-              <h2>Add question</h2>
-              <label>
-                Role
-                <select
-                  value={newQuestion.role}
-                  onChange={(event) =>
-                    setNewQuestion((current) => ({
-                      ...current,
-                      role: event.target.value as Role,
-                    }))
-                  }
+          </form>
+        </section>
+      ) : (
+        <section className="admin-app-shell">
+          <aside className="admin-sidebar">
+            <div>
+              <div className="sidebar-brand">
+                <span className="sidebar-logo">TB</span>
+                <div>
+                  <strong>MHS Careers</strong>
+                  <small>Admin Panel</small>
+                </div>
+              </div>
+              <div className="sidebar-nav">
+                <button
+                  className={adminPage === 'dashboard' ? 'active' : ''}
+                  onClick={() => setAdminPage('dashboard')}
                 >
-                  {roles.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Question
-                <input
-                  value={newQuestion.label}
-                  onChange={(event) =>
-                    setNewQuestion((current) => ({
-                      ...current,
-                      label: event.target.value,
-                    }))
-                  }
-                  placeholder="Example: Years of experience?"
-                />
-              </label>
-              <label>
-                Type
-                <select
-                  value={newQuestion.type}
-                  onChange={(event) =>
-                    setNewQuestion((current) => ({
-                      ...current,
-                      type: event.target.value as QuestionType,
-                    }))
-                  }
+                  Dashboard
+                </button>
+                <button
+                  className={adminPage === 'leads' ? 'active' : ''}
+                  onClick={() => setAdminPage('leads')}
                 >
-                  <option value="text">Text input</option>
-                  <option value="dropdown">Dropdown</option>
-                  <option value="radio">Radio buttons</option>
-                  <option value="yesno">Yes/No</option>
-                </select>
-              </label>
-              {newQuestion.type !== 'text' && newQuestion.type !== 'yesno' && (
-                <label>
-                  Options
-                  <input
-                    value={newQuestion.options.join(', ')}
-                    onChange={(event) =>
-                      setNewQuestion((current) => ({
-                        ...current,
-                        options: event.target.value
-                          .split(',')
-                          .map((option) => option.trim()),
-                      }))
-                    }
-                    placeholder="Option one, Option two"
-                  />
-                </label>
-              )}
-              <button className="primary-btn">Save as draft</button>
-            </form>
-
-            <div className="admin-panel">
-              <h2>Question library</h2>
-              <div className="question-list">
-                {questions
-                  .sort((a, b) => a.role.localeCompare(b.role) || a.order - b.order)
-                  .map((question) => (
-                    <article key={question.id} className="question-row">
-                      <div>
-                        <span>{question.role}</span>
-                        <strong>{question.label}</strong>
-                        <small>
-                          {question.type} | order {question.order}
-                        </small>
-                      </div>
-                      <div className="row-actions">
-                        <button
-                          onClick={() =>
-                            updateQuestion(question.id, {
-                              status:
-                                question.status === 'published'
-                                  ? 'draft'
-                                  : 'published',
-                            })
-                          }
-                        >
-                          {question.status === 'published' ? 'Draft' : 'Publish'}
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateQuestion(question.id, {
-                              enabled: !question.enabled,
-                            })
-                          }
-                        >
-                          {question.enabled ? 'Disable' : 'Enable'}
-                        </button>
-                        <button
-                          onClick={() =>
-                            setQuestions((current) =>
-                              current.filter((item) => item.id !== question.id),
-                            )
-                          }
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                  Leads
+                </button>
+                <button
+                  className={adminPage === 'questions' ? 'active' : ''}
+                  onClick={() => setAdminPage('questions')}
+                >
+                  Questions
+                </button>
               </div>
             </div>
-          </div>
-
-          <div className="admin-panel leads-panel">
-            <h2>Captured leads</h2>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Resume</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.map((lead) => (
-                    <tr key={lead.id}>
-                      <td>{lead.name}</td>
-                      <td>{lead.phone}</td>
-                      <td>{lead.email}</td>
-                      <td>{lead.role}</td>
-                      <td>{lead.resumeName}</td>
-                      <td>{lead.syncStatus}</td>
-                    </tr>
-                  ))}
-                  {!leads.length && (
-                    <tr>
-                      <td colSpan={6}>No leads captured yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="sidebar-foot">
+              <button className="back-site-btn" onClick={() => setActiveView('apply')}>
+                Back to Site
+              </button>
+              <button className="back-site-btn" onClick={logoutAdmin}>
+                Logout
+              </button>
             </div>
+          </aside>
+
+          <div className="admin-content">
+            {adminPage === 'dashboard' && (
+              <div className="admin-page fade-in">
+                <header className="page-head">
+                  <div>
+                    <h1>Dashboard</h1>
+                    <p>Overview of your recruitment funnel</p>
+                  </div>
+                </header>
+                <section className="stats-grid">
+                  <article className="stat-card">
+                    <span>Total Leads</span>
+                    <strong>{leads.length}</strong>
+                    <small>All time submissions</small>
+                  </article>
+                  <article className="stat-card">
+                    <span>This Week</span>
+                    <strong>{thisWeekLeads.length}</strong>
+                    <small>Last 7 days</small>
+                  </article>
+                  <article className="stat-card">
+                    <span>Active Questions</span>
+                    <strong>{publishedQuestions.length}</strong>
+                    <small>Published questions</small>
+                  </article>
+                </section>
+                <section className="admin-surface">
+                  <div className="surface-title-row">
+                    <h2>Applications by Role</h2>
+                  </div>
+                  {!leads.length ? (
+                    <p className="empty-copy">
+                      No leads yet. Share your landing page to start collecting applications.
+                    </p>
+                  ) : null}
+                  <div className="role-bars">
+                    {roles.map((roleName) => {
+                      const value = roleLeadCounts[roleName]
+                      const width = leads.length ? (value / leads.length) * 100 : 0
+                      return (
+                        <div key={roleName} className="role-row">
+                          <div>
+                            <span>{roleName}</span>
+                            <strong>{value}</strong>
+                          </div>
+                          <div className="bar-track">
+                            <div style={{ width: `${width}%` }}></div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {adminPage === 'leads' && (
+              <div className="admin-page fade-in">
+                <header className="page-head">
+                  <div>
+                    <h1>Leads</h1>
+                    <p>{filteredLeads.length} candidates</p>
+                  </div>
+                  <button
+                    className="ghost-action"
+                    onClick={() => downloadLeadsCsv(filteredLeads, questions)}
+                  >
+                    Export CSV
+                  </button>
+                </header>
+                <div className="filters-row">
+                  <input
+                    placeholder="Search by name, email, phone..."
+                    value={leadSearch}
+                    onChange={(event) => setLeadSearch(event.target.value)}
+                  />
+                  <select
+                    value={leadRoleFilter}
+                    onChange={(event) =>
+                      setLeadRoleFilter(event.target.value as 'All Roles' | Role)
+                    }
+                  >
+                    <option value="All Roles">All Roles</option>
+                    {roles.map((roleName) => (
+                      <option key={roleName}>{roleName}</option>
+                    ))}
+                  </select>
+                </div>
+                <section className="admin-surface">
+                  {!filteredLeads.length ? (
+                    <div className="center-empty-state">
+                      <strong>No leads found</strong>
+                    </div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Resume</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredLeads.map((lead) => (
+                            <tr key={lead.id}>
+                              <td>{lead.name}</td>
+                              <td>{lead.phone}</td>
+                              <td>{lead.email}</td>
+                              <td>{lead.role}</td>
+                              <td>
+                                {lead.resumeUrl ? (
+                                  <button
+                                    type="button"
+                                    className="resume-link"
+                                    onClick={() => openResume(lead)}
+                                  >
+                                    {lead.resumeName || 'View resume'}
+                                  </button>
+                                ) : (
+                                  lead.resumeName || 'N/A'
+                                )}
+                              </td>
+                              <td>{formatSubmissionDate(lead.createdAt)}</td>
+                              <td>
+                                <span
+                                  className={
+                                    lead.syncStatus === 'synced'
+                                      ? 'pill synced'
+                                      : 'pill local'
+                                  }
+                                >
+                                  {lead.syncStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {adminPage === 'questions' && (
+              <div className="admin-page fade-in">
+                <header className="page-head">
+                  <div>
+                    <h1>Questions</h1>
+                    <p>Manage dynamic questions per job role</p>
+                  </div>
+                  <button
+                    className="primary-btn small-btn"
+                    onClick={() => setShowAddQuestion((value) => !value)}
+                  >
+                    {showAddQuestion ? 'Close' : 'Add Question'}
+                  </button>
+                </header>
+
+                {showAddQuestion && (
+                  <form className="admin-surface add-question-form" onSubmit={addQuestion}>
+                    <div className="mini-grid">
+                      <label>
+                        Role
+                        <select
+                          value={newQuestion.role}
+                          onChange={(event) =>
+                            setNewQuestion((current) => ({
+                              ...current,
+                              role: event.target.value as Role,
+                            }))
+                          }
+                        >
+                          {roles.map((item) => (
+                            <option key={item}>{item}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Type
+                        <select
+                          value={newQuestion.type}
+                          onChange={(event) =>
+                            setNewQuestion((current) => ({
+                              ...current,
+                              type: event.target.value as QuestionType,
+                            }))
+                          }
+                        >
+                          <option value="text">Text input</option>
+                          <option value="dropdown">Dropdown</option>
+                          <option value="radio">Radio buttons</option>
+                          <option value="yesno">Yes/No</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label>
+                      Question
+                      <input
+                        value={newQuestion.label}
+                        onChange={(event) =>
+                          setNewQuestion((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                        placeholder="Example: What monthly target have you handled?"
+                      />
+                    </label>
+                    {newQuestion.type !== 'text' && newQuestion.type !== 'yesno' && (
+                      <label>
+                        Options
+                        <input
+                          value={newQuestion.options.join(', ')}
+                          onChange={(event) =>
+                            setNewQuestion((current) => ({
+                              ...current,
+                              options: event.target.value
+                                .split(',')
+                                .map((option) => option.trim()),
+                            }))
+                          }
+                          placeholder="Option one, Option two"
+                        />
+                      </label>
+                    )}
+                    <button className="primary-btn small-btn">Save as draft</button>
+                  </form>
+                )}
+
+                <div className="question-groups">
+                  {questionGroups.map((group) => (
+                    <section className="admin-surface role-group" key={group.role}>
+                      <div className="surface-title-row">
+                        <h2>{group.role}</h2>
+                        <small>{group.list.length} questions</small>
+                      </div>
+                      {!group.list.length ? (
+                        <p className="empty-copy">No questions in this role yet.</p>
+                      ) : (
+                        <div className="question-stack">
+                          {group.list.map((question) => (
+                            <article key={question.id} className="question-item">
+                              <div>
+                                <strong>{question.label}</strong>
+                                <div className="meta-badges">
+                                  <span>{question.type}</span>
+                                  <span>{question.status}</span>
+                                  <span>{question.enabled ? 'enabled' : 'disabled'}</span>
+                                </div>
+                              </div>
+                              <div className="row-actions">
+                                <button
+                                  onClick={() =>
+                                    updateQuestion(question.id, {
+                                      status:
+                                        question.status === 'published'
+                                          ? 'draft'
+                                          : 'published',
+                                    })
+                                  }
+                                >
+                                  {question.status === 'published' ? 'Draft' : 'Publish'}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    updateQuestion(question.id, {
+                                      enabled: !question.enabled,
+                                    })
+                                  }
+                                >
+                                  {question.enabled ? 'Disable' : 'Enable'}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setQuestions((current) =>
+                                      current.filter((item) => item.id !== question.id),
+                                    )
+                                  }
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
