@@ -728,6 +728,225 @@ td {
   }
 }
 
+/* ============================================================
+   PREMIUM MICRO-ANIMATIONS
+   ============================================================ */
+
+@keyframes navSlideDown {
+  from { opacity: 0; transform: translateY(-100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes heroLogoReveal {
+  0%   { opacity: 0; transform: scale(0.6) rotate(-8deg); }
+  70%  { opacity: 1; transform: scale(1.07) rotate(1.5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-10px); }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(38px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes heroImgReveal {
+  from { opacity: 0; transform: translateX(60px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes shimmerSlide {
+  0%   { transform: translateX(-200%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes glowBreath {
+  0%, 100% { box-shadow: 0 16px 30px rgba(15, 118, 110, 0.22); }
+  50%       { box-shadow: 0 22px 56px rgba(15, 118, 110, 0.52), 0 0 0 7px rgba(15, 118, 110, 0.09); }
+}
+
+/* --- Navbar entrance --- */
+.topbar {
+  animation: navSlideDown 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* --- Hero logo: wrapper floats, img reveals --- */
+.hero-logo-wrap {
+  animation: floatY 4.5s ease-in-out 1.3s infinite;
+}
+
+.hero-logo {
+  animation: heroLogoReveal 0.9s cubic-bezier(0.34, 1.5, 0.64, 1) 0.1s both;
+}
+
+/* --- Hero copy staggered entrance --- */
+.hero-copy .eyebrow {
+  animation: fadeSlideUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both;
+}
+
+.hero-copy h1 {
+  animation: fadeSlideUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.36s both;
+}
+
+.hero-copy p {
+  animation: fadeSlideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.52s both;
+}
+
+.hero-copy > .primary-btn {
+  animation:
+    fadeSlideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.65s both,
+    glowBreath 3s ease-in-out 1.8s infinite;
+}
+
+/* --- CEO image slide in from right --- */
+.hero-visual {
+  animation: heroImgReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.28s both;
+}
+
+/* --- Scroll-triggered base --- */
+.anim-ready {
+  opacity: 0;
+  transform: translateY(38px);
+  transition:
+    opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.anim-ready.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger delays for department cards */
+.stagger-1 { transition-delay: 0ms; }
+.stagger-2 { transition-delay: 90ms; }
+.stagger-3 { transition-delay: 180ms; }
+.stagger-4 { transition-delay: 270ms; }
+.stagger-5 { transition-delay: 360ms; }
+
+/* --- Department card hover lift --- */
+.department-grid article {
+  transition:
+    transform 0.38s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.38s ease,
+    filter 0.3s ease;
+  will-change: transform;
+}
+
+.department-grid article:hover {
+  box-shadow: 0 32px 64px rgba(15, 23, 42, 0.26);
+  filter: brightness(1.07);
+  transform: translateY(-12px) scale(1.03);
+  z-index: 3;
+}
+
+/* --- Dept apply button glow on card hover --- */
+.department-grid article:hover .dept-apply {
+  background: rgba(255, 255, 255, 0.26);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* --- Primary button shimmer overlay --- */
+.primary-btn {
+  overflow: hidden;
+  position: relative;
+}
+
+.primary-btn::after {
+  animation: shimmerSlide 3s ease infinite;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.3) 50%, transparent 62%);
+  content: '';
+  height: 100%;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 60%;
+}
+
+/* --- Journey CTA button shimmer --- */
+.journey-btn {
+  overflow: hidden;
+  position: relative;
+}
+
+.journey-btn::after {
+  animation: shimmerSlide 2.6s ease 0.9s infinite;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.22) 50%, transparent 62%);
+  content: '';
+  height: 100%;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 60%;
+}
+
+/* --- Nav logo hover spin --- */
+.nav-logo {
+  transition: transform 0.35s cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+
+.brand:hover .nav-logo {
+  transform: rotate(-10deg) scale(1.14);
+}
+
+/* --- Choice button hover spring --- */
+.choice {
+  transition: all 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.choice:hover:not(.selected) {
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.14);
+  transform: translateY(-4px) scale(1.02);
+}
+
+/* --- Input focus micro-pop --- */
+input,
+select {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    transform 140ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+input:focus,
+select:focus {
+  transform: scale(1.006);
+}
+
+/* --- Upload zone hover lift --- */
+.upload-zone:hover {
+  box-shadow: 0 10px 28px rgba(15, 118, 110, 0.13);
+  transform: translateY(-5px);
+}
+
+/* --- Stat card hover lift --- */
+.stat-card {
+  transition:
+    transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.3s ease;
+}
+
+.stat-card:hover {
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.1);
+  transform: translateY(-5px);
+}
+
+/* --- Question item hover --- */
+.question-item {
+  transition: box-shadow 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.question-item:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+  transform: translateY(-2px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -313,6 +313,23 @@ function App() {
     }
   }, [activeView, isAdminAuthenticated])
 
+  useEffect(() => {
+    const els = document.querySelectorAll('.anim-ready')
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('in-view')
+            observer.unobserve(entry.target)
+          }
+        })
+      },
+      { threshold: 0.1 },
+    )
+    els.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [activeView])
+
   const publishedQuestions = questions.filter(
     (question) => question.status === 'published' && question.enabled,
   )
@@ -748,7 +765,7 @@ function App() {
           </section>
 
           <section className="department-section">
-            <div className="department-head">
+            <div className="department-head anim-ready">
               <h2>Hiring Across Departments</h2>
               <p>We have opportunities for every kind of talent.</p>
             </div>
@@ -759,8 +776,8 @@ function App() {
                 ['Marketing', 'Marketing', 'dept marketing'],
                 ['Human Resources', 'HR', 'dept hr'],
                 ['Others', 'Others', 'dept others'],
-              ].map(([title, roleName, className]) => (
-                <article className={className} key={title}>
+              ].map(([title, roleName, className], index) => (
+                <article className={`${className} anim-ready stagger-${index + 1}`} key={title}>
                   <div className="dept-overlay">
                     <h3>{title}</h3>
                     <button
@@ -776,7 +793,7 @@ function App() {
             </div>
           </section>
 
-          <section className="application-shell" id="apply-form">
+          <section className="application-shell anim-ready" id="apply-form">
             <div className="form-meta">
               <span>Step {Math.min(step + 1, totalSteps)} / {totalSteps}</span>
               <strong>{progress}% complete</strong>
@@ -801,7 +818,7 @@ function App() {
           </section>
 
           <section className="journey-cta">
-            <div className="journey-inner">
+            <div className="journey-inner anim-ready">
               <h2>Ready to start your journey?</h2>
               <p>It takes less than 5 minutes to apply. Our team reviews every application personally.</p>
               <button
